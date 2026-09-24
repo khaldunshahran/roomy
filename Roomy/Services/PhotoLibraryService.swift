@@ -149,7 +149,7 @@ final class PhotoLibraryService: ObservableObject {
             options.deliveryMode = .highQualityFormat
             options.resizeMode = .none
             options.isNetworkAccessAllowed = true
-            options.progressHandler = { value, _ in report(value) }
+            options.progressHandler = { value, _, _, _ in report(value) }
 
             var resumed = false
             PHImageManager.default().requestImageDataAndOrientation(
@@ -188,7 +188,7 @@ final class PhotoLibraryService: ObservableObject {
             options.version = .current
             options.deliveryMode = .highQualityFormat
             options.isNetworkAccessAllowed = true
-            options.progressHandler = { value, _ in report(value) }
+            options.progressHandler = { value, _, _, _ in report(value) }
 
             var resumed = false
             PHImageManager.default().requestAVAsset(
