@@ -19,6 +19,7 @@ targets:
       INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
+      path: Roomy/Info.plist
       properties:
         CFBundleDisplayName: Roomy
         NSPhotoLibraryUsageDescription: "Roomy needs access to your photos and videos to find what's taking up space and shrink it. Everything is processed on your phone."
