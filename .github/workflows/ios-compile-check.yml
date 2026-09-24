@@ -1,0 +1,44 @@
+# Roomy — free simulator compile check.
+#
+# This workflow needs NO Apple Developer account and NO secrets. It just
+# proves the app compiles cleanly on the free macOS runners using a plain
+# Debug build for the iOS Simulator (code signing disabled).
+#
+# If this fails, the failure is always in the Swift code or the XcodeGen
+# spec — never in signing or provisioning.
+
+name: iOS compile check
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: Roomy
+  SCHEME: Roomy
+
+jobs:
+  compile:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build \
+            -project "$PROJECT_NAME.xcodeproj" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO

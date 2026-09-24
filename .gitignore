@@ -1,0 +1,6 @@
+build/
+DerivedData/
+Roomy.xcodeproj/
+*.ipa
+*.dSYM.zip
+.DS_Store

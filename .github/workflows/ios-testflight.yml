@@ -1,0 +1,95 @@
+# Roomy — TestFlight pipeline (paid path).
+#
+# Unlike the free compile check, this workflow ships a build to TestFlight,
+# so it needs real Apple credentials. One-time setup:
+#
+#  1. Enroll in the Apple Developer Program ($99/yr).
+#  2. Create the app record in App Store Connect and note your Team ID
+#     (App Store Connect > Membership), then replace YOUR_TEAM_ID in
+#     ExportOptions.plist.
+#  3. Create an App Store Connect API key (.p8) and note the Issuer ID and
+#     Key ID (App Store Connect > Users and Access > Integrations > API Keys).
+#  4. Create a distribution certificate (.cer), export it with its private
+#     key as a .p12 file, and base64-encode it. On Windows PowerShell:
+#       [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\cert.p12")) | Set-Clipboard
+#  5. Create an App Store distribution provisioning profile for the
+#     com.roomyapp.ios bundle ID and base64-encode the .mobileprovision file
+#     the same way.
+#  6. Add all of these as GitHub repository secrets:
+#       IOS_DIST_P12_BASE64, IOS_DIST_P12_PASSWORD, IOS_PROVISION_PROFILE_BASE64,
+#       APPSTORE_ISSUER_ID, APPSTORE_API_KEY_ID, APPSTORE_API_PRIVATE_KEY
+#
+# Trigger: push to main or manual dispatch. To release less often, gate it
+# behind a tag or a manual-only trigger instead.
+
+name: iOS TestFlight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: Roomy
+  SCHEME: Roomy
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Install distribution certificate
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p "" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "" "$KEYCHAIN"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN"
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/roomy.mobileprovision
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT_NAME.xcodeproj" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/$PROJECT_NAME.xcarchive"
+
+      - name: Export archive
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/$PROJECT_NAME.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export"
+
+      - name: Upload to TestFlight
+        uses: apple-actions/upload-testflight-build@v3
+        with:
+          app-path: ${{ runner.temp }}/export/${{ env.PROJECT_NAME }}.ipa
+          issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
