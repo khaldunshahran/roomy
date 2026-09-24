@@ -140,7 +140,10 @@ final class PhotoLibraryService: ObservableObject {
         let report: @Sendable (Double) -> Void = { value in
             DispatchQueue.main.async { progress(value) }
         }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+        // NOTE: uses the non-throwing withCheckedContinuation over Result on
+        // purpose. The throwing variant has two same-shaped overloads in the
+        // iOS 18 SDK and the compiler cannot pick one (ambiguous expression).
+        let result: Result<Data, Error> = await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
             options.version = .current
             options.deliveryMode = .highQualityFormat
@@ -159,16 +162,17 @@ final class PhotoLibraryService: ObservableObject {
                 resumed = true
 
                 if (info?[PHImageCancelledKey] as? Bool) == true {
-                    continuation.resume(throwing: RoomyError.downloadCancelled)
+                    continuation.resume(returning: .failure(RoomyError.downloadCancelled))
                     return
                 }
                 guard let data else {
-                    continuation.resume(throwing: RoomyError.downloadCancelled)
+                    continuation.resume(returning: .failure(RoomyError.downloadCancelled))
                     return
                 }
-                continuation.resume(returning: data)
+                continuation.resume(returning: .success(data))
             }
         }
+        return try result.get()
     }
 
     /// Requests the video asset's local file URL. Even for iCloud videos this
@@ -177,7 +181,9 @@ final class PhotoLibraryService: ObservableObject {
         let report: @Sendable (Double) -> Void = { value in
             DispatchQueue.main.async { progress(value) }
         }
-        let avAsset: AVAsset = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AVAsset, Error>) in
+        // NOTE: non-throwing withCheckedContinuation over Result, for the same
+        // overload-ambiguity reason as requestImageData above.
+        let assetResult: Result<AVAsset, Error> = await withCheckedContinuation { continuation in
             let options = PHVideoRequestOptions()
             options.version = .current
             options.deliveryMode = .highQualityFormat
@@ -193,16 +199,17 @@ final class PhotoLibraryService: ObservableObject {
                 resumed = true
 
                 if (info?[PHImageCancelledKey] as? Bool) == true {
-                    continuation.resume(throwing: RoomyError.downloadCancelled)
+                    continuation.resume(returning: .failure(RoomyError.downloadCancelled))
                     return
                 }
                 guard let asset else {
-                    continuation.resume(throwing: RoomyError.noVideoTrack)
+                    continuation.resume(returning: .failure(RoomyError.noVideoTrack))
                     return
                 }
-                continuation.resume(returning: asset)
+                continuation.resume(returning: .success(asset))
             }
         }
+        let avAsset = try assetResult.get()
         guard let urlAsset = avAsset as? AVURLAsset else {
             throw RoomyError.noVideoTrack
         }
@@ -230,7 +237,9 @@ final class PhotoLibraryService: ObservableObject {
     }
 
     private func downloadLivePhotoStill(_ resource: PHAssetResource, report: @Sendable @escaping (Double) -> Void) async throws -> Data {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+        // Non-throwing withCheckedContinuation over Result: the throwing
+        // variant is ambiguous between two same-shaped SDK overloads.
+        let result: Result<Data, Error> = await withCheckedContinuation { continuation in
             let options = PHAssetResourceRequestOptions()
             options.isNetworkAccessAllowed = true
             options.progressHandler = { value in report(value * 0.5) }
@@ -245,19 +254,22 @@ final class PhotoLibraryService: ObservableObject {
                 guard !resumed else { return }
                 resumed = true
                 if error != nil || chunks.isEmpty {
-                    continuation.resume(throwing: RoomyError.downloadCancelled)
+                    continuation.resume(returning: .failure(RoomyError.downloadCancelled))
                 } else {
-                    continuation.resume(returning: chunks)
+                    continuation.resume(returning: .success(chunks))
                 }
             }
         }
+        return try result.get()
     }
 
     private func downloadLivePhotoMovie(_ resource: PHAssetResource, report: @Sendable @escaping (Double) -> Void) async throws -> URL {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("mov")
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+        // Non-throwing withCheckedContinuation over Result: same overload
+        // ambiguity as the other continuation sites in this file.
+        let result: Result<URL, Error> = await withCheckedContinuation { continuation in
             let options = PHAssetResourceRequestOptions()
             options.isNetworkAccessAllowed = true
             options.progressHandler = { value in report(0.5 + value * 0.5) }
@@ -271,12 +283,13 @@ final class PhotoLibraryService: ObservableObject {
                 guard !resumed else { return }
                 resumed = true
                 if error != nil {
-                    continuation.resume(throwing: RoomyError.downloadCancelled)
+                    continuation.resume(returning: .failure(RoomyError.downloadCancelled))
                 } else {
-                    continuation.resume(returning: tempURL)
+                    continuation.resume(returning: .success(tempURL))
                 }
             }
         }
+        return try result.get()
     }
 
     // MARK: - Saving

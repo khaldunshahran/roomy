@@ -329,7 +329,7 @@ final class VideoCompressor {
             }
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             writer.finishWriting {
                 continuation.resume()
             }

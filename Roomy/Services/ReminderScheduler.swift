@@ -139,7 +139,12 @@ enum ReminderScheduler {
             comps.day = 1
         }
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-        try await center.add(UNNotificationRequest(identifier: notificationID, content: content, trigger: trigger))
+        do {
+            try await center.add(UNNotificationRequest(identifier: notificationID, content: content, trigger: trigger))
+        } catch {
+            // applySchedule's contract is "exits silently": a failed add just
+            // means no reminder fires, never a crash or a thrown error.
+        }
         scheduleBackgroundRefresh()
     }
 
