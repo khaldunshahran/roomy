@@ -126,7 +126,7 @@ struct PreviewView: View {
         }
         representative = rep
         do {
-            let data = try await appState.library.requestImageData(for: rep.asset) { _ in }
+            let data = try await appState.library.requestImageData(for: rep) { _ in }
             originalBytes = Int64(data.count)
             let preset = appState.preset
             let compressed = try await Task.detached(priority: .userInitiated) {

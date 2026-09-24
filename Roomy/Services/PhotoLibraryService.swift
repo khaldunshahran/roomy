@@ -8,6 +8,7 @@
 
 import Foundation
 import Photos
+import PhotosUI
 import UIKit
 import AVFoundation
 
@@ -136,15 +137,15 @@ final class PhotoLibraryService: ObservableObject {
     /// iCloud items are downloaded by iOS itself (airplane-mode friendly:
     /// the request simply waits/fails instead of crashing); progress is reported 0...1 on the main thread.
     func requestImageData(for item: LibraryItem, progress: @escaping (Double) -> Void) async throws -> Data {
+        let report: @Sendable (Double) -> Void = { value in
+            DispatchQueue.main.async { progress(value) }
+        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             let options = PHImageRequestOptions()
             options.version = .current
             options.deliveryMode = .highQualityFormat
             options.resizeMode = .none
             options.isNetworkAccessAllowed = true
-            let report: @Sendable (Double) -> Void = { value in
-                DispatchQueue.main.async { progress(value) }
-            }
             options.progressHandler = { value, _ in report(value) }
 
             var resumed = false
@@ -173,14 +174,14 @@ final class PhotoLibraryService: ObservableObject {
     /// Requests the video asset's local file URL. Even for iCloud videos this
     /// is a real on-disk file once downloaded (iOS handles the download).
     func requestVideoFile(for item: LibraryItem, progress: @escaping (Double) -> Void) async throws -> URL {
+        let report: @Sendable (Double) -> Void = { value in
+            DispatchQueue.main.async { progress(value) }
+        }
         let avAsset: AVAsset = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AVAsset, Error>) in
             let options = PHVideoRequestOptions()
             options.version = .current
             options.deliveryMode = .highQualityFormat
             options.isNetworkAccessAllowed = true
-            let report: @Sendable (Double) -> Void = { value in
-                DispatchQueue.main.async { progress(value) }
-            }
             options.progressHandler = { value, _ in report(value) }
 
             var resumed = false

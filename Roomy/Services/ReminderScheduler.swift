@@ -139,7 +139,7 @@ enum ReminderScheduler {
             comps.day = 1
         }
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
-        center.add(UNNotificationRequest(identifier: notificationID, content: content, trigger: trigger))
+        try await center.add(UNNotificationRequest(identifier: notificationID, content: content, trigger: trigger))
         scheduleBackgroundRefresh()
     }
 

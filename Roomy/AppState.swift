@@ -42,8 +42,8 @@ final class AppState: ObservableObject {
         self.store = StoreManager()
         // Forward nested observable changes so views observing AppState
         // refresh when library/batch/store publish.
-        for nested in [library as ObservableObject, batch, store] {
-            nested.objectWillChange
+        for publisher in [library.objectWillChange, batch.objectWillChange, store.objectWillChange] {
+            publisher
                 .sink { [weak self] _ in self?.objectWillChange.send() }
                 .store(in: &cancellables)
         }

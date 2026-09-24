@@ -202,13 +202,13 @@ final class BatchEngine: ObservableObject {
         } catch is CancellationError {
             // User cancelled: propagate so processItem marks it .cancelled,
             // not "failed", and not the still fallback either.
-            throw
+            throw CancellationError()
         } catch {
             // Fallback: still photo only, with an honest note.
             do {
                 try await processPhoto(at: index, imageData: nil)
             } catch is CancellationError {
-                throw
+                throw CancellationError()
             }
             // processPhoto marks .failed on throw; only stamp the note on a
             // successful still save.
@@ -401,6 +401,6 @@ private enum BatchStore {
     static func completedIDs() -> Set<String> {
         let dict: [String: Int64]? = (try? Data(contentsOf: completedURL()))
             .flatMap { try? JSONDecoder().decode([String: Int64].self, from: $0) }
-        return Set(dict?.keys ?? [])
+        return Set((dict ?? [:]).keys)
     }
 }
