@@ -32,12 +32,12 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build for device (unsigned)
+      - name: Build for device (unsigned, Release)
         run: |
           xcodebuild build \
             -project "$PROJECT_NAME.xcodeproj" \
             -scheme "$SCHEME" \
-            -configuration Debug \
+            -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
@@ -45,7 +45,7 @@ jobs:
 
       - name: Package unsigned IPA
         run: |
-          APP_PATH="build/Build/Products/Debug-iphoneos/$PROJECT_NAME.app"
+          APP_PATH="build/Build/Products/Release-iphoneos/$PROJECT_NAME.app"
           test -d "$APP_PATH"
           rm -rf Payload Roomy-unsigned.ipa
           mkdir Payload

@@ -29,6 +29,19 @@ final class AppState: ObservableObject {
     @Published var lastBatchWasFirstWin = false
     @Published var remainingEstimateBytes: Int64 = 0
 
+    /// Library scan lifecycle. The scan is slow on large libraries, so it
+    /// runs once in the background (at launch when access already exists,
+    /// or right after access is granted) and every screen reuses the cache.
+    enum LibraryScanState: Equatable {
+        case idle
+        case scanning
+        case ready
+    }
+
+    @Published var libraryScanState: LibraryScanState = .idle
+    @Published var libraryScanProgress: Double = 0
+    private var scanTask: Task<Void, Never>?
+
     let library: PhotoLibraryService
     let batch: BatchEngine
     let store: StoreManager
@@ -65,5 +78,53 @@ final class AppState: ObservableObject {
     func resetToMain() {
         selectedItems = []
         route = .main
+    }
+
+    // MARK: - Library scan
+
+    /// Called once at app launch. If photo access was already granted, the
+    /// library scan starts immediately in the background.
+    func initialLibraryCheck() {
+        library.refreshAccessState()
+        if library.accessState == .full || library.accessState == .limited {
+            startLibraryScanIfNeeded()
+        }
+    }
+
+    /// Starts the library scan in the background unless one already ran or
+    /// is running. Safe to call from anywhere, any number of times.
+    func startLibraryScanIfNeeded() {
+        guard libraryScanState == .idle else { return }
+        runScan()
+    }
+
+    /// Re-runs the scan (manual refresh). The old results stay visible until
+    /// the new ones land.
+    func rescanLibrary() {
+        scanTask?.cancel()
+        runScan()
+    }
+
+    private func runScan() {
+        libraryScanState = .scanning
+        libraryScanProgress = 0
+        scanTask = Task {
+            // fetchLargestAssets is nonisolated: the heavy enumeration runs
+            // off the main thread while this task suspends.
+            let items = await library.fetchLargestAssets(limit: 60) { [weak self] p in
+                Task { @MainActor [weak self] in
+                    self?.libraryScanProgress = p
+                }
+            }
+            guard !Task.isCancelled else { return }
+            self.applyScanResult(items)
+        }
+    }
+
+    private func applyScanResult(_ items: [LibraryItem]) {
+        finderItems = items
+        let topBytes = items.prefix(40).reduce(Int64(0)) { $0 + $1.originalBytes }
+        finderEstimateBytes = Int64(Double(topBytes) * Config.Estimate.smartRatio)
+        libraryScanState = .ready
     }
 }

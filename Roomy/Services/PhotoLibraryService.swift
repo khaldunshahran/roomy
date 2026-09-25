@@ -91,18 +91,32 @@ final class PhotoLibraryService: ObservableObject {
     // MARK: - Size measurement (private, encapsulated here)
 
     /// Sums the private `fileSize` of every PHAssetResource of the asset.
-    private func sizeOfAsset(_ asset: PHAsset) -> Int64 {
+    /// Static + nonisolated so the (slow) library scan can run off the main actor.
+    private nonisolated static func sizeOfAsset(_ asset: PHAsset) -> Int64 {
         PHAssetResource.assetResources(for: asset)
             .reduce(0) { partial, resource in
                 partial + ((resource.value(forKey: "fileSize") as? Int64) ?? 0)
             }
     }
 
+    /// Fetch a single asset by local identifier (e.g. a verified compressed copy).
+    nonisolated static func fetchAsset(localIdentifier: String) -> PHAsset? {
+        PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
+    }
+
     // MARK: - Fetching
 
     /// The largest photos and videos in the library, biggest first.
     /// Works with both full and limited library access.
-    func fetchLargestAssets(limit: Int = 150) async -> [LibraryItem] {
+    ///
+    /// Nonisolated: measuring every asset's file size is too slow for the
+    /// main thread on large libraries, so callers run this in the background
+    /// (see `AppState.startLibraryScanIfNeeded`). `progress` is 0...1 and is
+    /// called on a background thread.
+    nonisolated func fetchLargestAssets(
+        limit: Int = 150,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }
+    ) async -> [LibraryItem] {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(
@@ -112,10 +126,21 @@ final class PhotoLibraryService: ObservableObject {
         )
 
         let fetchResult = PHAsset.fetchAssets(with: options)
-        var items: [LibraryItem] = []
-        items.reserveCapacity(fetchResult.count)
+        let total = fetchResult.count
+        var pairs: [(asset: PHAsset, bytes: Int64)] = []
+        pairs.reserveCapacity(total)
+        var processed = 0
         fetchResult.enumerateObjects { asset, _, _ in
-            items.append(LibraryItem(
+            pairs.append((asset, Self.sizeOfAsset(asset)))
+            processed += 1
+            if processed % 256 == 0 || processed == total {
+                progress(total > 0 ? Double(processed) / Double(total) : 1.0)
+            }
+        }
+        pairs.sort { $0.bytes > $1.bytes }
+        return pairs.prefix(limit).map { pair in
+            let asset = pair.asset
+            return LibraryItem(
                 id: asset.localIdentifier,
                 asset: asset,
                 isVideo: asset.mediaType == .video,
@@ -124,11 +149,9 @@ final class PhotoLibraryService: ObservableObject {
                 duration: asset.duration,
                 pixelWidth: asset.pixelWidth,
                 pixelHeight: asset.pixelHeight,
-                originalBytes: self.sizeOfAsset(asset)
-            ))
+                originalBytes: pair.bytes
+            )
         }
-        items.sort { $0.originalBytes > $1.originalBytes }
-        return Array(items.prefix(limit))
     }
 
     // MARK: - Downloading source data
@@ -136,7 +159,7 @@ final class PhotoLibraryService: ObservableObject {
     /// Requests the current (edited) image data for a photo.
     /// iCloud items are downloaded by iOS itself (airplane-mode friendly:
     /// the request simply waits/fails instead of crashing); progress is reported 0...1 on the main thread.
-    func requestImageData(for item: LibraryItem, progress: @escaping (Double) -> Void) async throws -> Data {
+    func requestImageData(for asset: PHAsset, progress: @escaping (Double) -> Void) async throws -> Data {
         let report: @Sendable (Double) -> Void = { value in
             DispatchQueue.main.async { progress(value) }
         }
@@ -153,7 +176,7 @@ final class PhotoLibraryService: ObservableObject {
 
             var resumed = false
             PHImageManager.default().requestImageDataAndOrientation(
-                for: item.asset,
+                for: asset,
                 options: options
             ) { data, _, _, info in
                 guard !resumed else { return }
@@ -175,9 +198,14 @@ final class PhotoLibraryService: ObservableObject {
         return try result.get()
     }
 
+    /// Convenience overload for callers holding a `LibraryItem`.
+    func requestImageData(for item: LibraryItem, progress: @escaping (Double) -> Void) async throws -> Data {
+        try await requestImageData(for: item.asset, progress: progress)
+    }
+
     /// Requests the video asset's local file URL. Even for iCloud videos this
     /// is a real on-disk file once downloaded (iOS handles the download).
-    func requestVideoFile(for item: LibraryItem, progress: @escaping (Double) -> Void) async throws -> URL {
+    func requestVideoFile(for asset: PHAsset, progress: @escaping (Double) -> Void) async throws -> URL {
         let report: @Sendable (Double) -> Void = { value in
             DispatchQueue.main.async { progress(value) }
         }
@@ -192,7 +220,7 @@ final class PhotoLibraryService: ObservableObject {
 
             var resumed = false
             PHImageManager.default().requestAVAsset(
-                forVideo: item.asset,
+                forVideo: asset,
                 options: options
             ) { asset, _, info in
                 guard !resumed else { return }
@@ -214,6 +242,11 @@ final class PhotoLibraryService: ObservableObject {
             throw RoomyError.noVideoTrack
         }
         return urlAsset.url
+    }
+
+    /// Convenience overload for callers holding a `LibraryItem`.
+    func requestVideoFile(for item: LibraryItem, progress: @escaping (Double) -> Void) async throws -> URL {
+        try await requestVideoFile(for: item.asset, progress: progress)
     }
 
     /// Downloads both parts of a Live Photo: the still image and its paired video.

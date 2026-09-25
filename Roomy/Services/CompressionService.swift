@@ -220,6 +220,19 @@ final class VideoCompressor {
         let bitrate = max(800_000, Int(Double(w * h) * Double(fps) * bitsPerPixel))
 
         let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
+
+        // Source audio format, for a robust decode -> re-encode path.
+        // (Audio passthrough with nil outputSettings silently drops the
+        // audio track on some sources, which the verifier then rejects.)
+        var audioSampleRate: Double = 44_100
+        var audioChannels: Int = 2
+        if let audioTrack,
+           let formatDescs = try? await audioTrack.load(.formatDescriptions),
+           let formatDesc = formatDescs.first as? CMAudioFormatDescription,
+           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc) {
+            if asbd.pointee.mSampleRate > 0 { audioSampleRate = asbd.pointee.mSampleRate }
+            if asbd.pointee.mChannelsPerFrame > 0 { audioChannels = Int(asbd.pointee.mChannelsPerFrame) }
+        }
         let durationSeconds = CMTimeGetSeconds((try? await asset.load(.duration)) ?? .zero)
 
         let outputURL = FileManager.default.temporaryDirectory
@@ -244,9 +257,21 @@ final class VideoCompressor {
         }
         reader.add(videoOutput)
 
+        // Decode audio to PCM on read; the writer re-encodes to AAC below.
         var audioOutput: AVAssetReaderTrackOutput?
         if let audioTrack {
-            let out = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
+            let out = AVAssetReaderTrackOutput(
+                track: audioTrack,
+                outputSettings: [
+                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVSampleRateKey: audioSampleRate,
+                    AVNumberOfChannelsKey: audioChannels,
+                    AVLinearPCMBitDepthKey: 16,
+                    AVLinearPCMIsBigEndianKey: false,
+                    AVLinearPCMIsFloatKey: false,
+                    AVLinearPCMIsNonInterleaved: false,
+                ]
+            )
             if reader.canAdd(out) {
                 reader.add(out)
                 audioOutput = out
@@ -274,9 +299,20 @@ final class VideoCompressor {
         }
         writer.add(videoInput)
 
+        // Re-encode the decoded PCM to AAC so the output always carries
+        // a real audio track (passthrough with nil settings silently
+        // drops the track on some sources).
         var audioInput: AVAssetWriterInput?
         if audioOutput != nil {
-            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
+            let input = AVAssetWriterInput(
+                mediaType: .audio,
+                outputSettings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: audioSampleRate,
+                    AVNumberOfChannelsKey: audioChannels,
+                    AVEncoderBitRateKey: 128_000,
+                ]
+            )
             input.expectsMediaDataInRealTime = false
             if writer.canAdd(input) {
                 writer.add(input)

@@ -4,8 +4,9 @@ import SwiftUI
 struct SpaceFinderView: View {
     @EnvironmentObject var appState: AppState
 
-    @State private var isLoading = true
     @State private var refreshSeed = UUID()
+
+    private var isScanning: Bool { appState.libraryScanState == .scanning }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,18 +33,37 @@ struct SpaceFinderView: View {
             .padding()
             .background(.bar)
         }
-        .task { await load() }
+        // The scan runs once in the background (see AppState); this screen
+        // only ensures it has been kicked off, never re-runs it on appear.
+        .onAppear { appState.startLibraryScanIfNeeded() }
         .onReceive(appState.library.objectWillChange) { _ in refreshSeed = UUID() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("You could free about \(FormatHelpers.bytes(appState.finderEstimateBytes))")
-                .font(.title2)
-                .fontWeight(.bold)
-            Text("Estimate. Actual savings are measured after compression.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("You could free about \(FormatHelpers.bytes(appState.finderEstimateBytes))")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+                Button {
+                    appState.rescanLibrary()
+                } label: {
+                    Label("Rescan", systemImage: "arrow.clockwise")
+                        .font(.subheadline)
+                }
+                .disabled(isScanning)
+                .accessibilityLabel("Rescan library")
+            }
+            if isScanning && !appState.finderItems.isEmpty {
+                Text("Updating… \(Int(appState.libraryScanProgress * 100))%")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Estimate. Actual savings are measured after compression.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -65,9 +85,14 @@ struct SpaceFinderView: View {
             }
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if isLoading {
-            VStack {
-                SwiftUI.ProgressView("Scanning your library…")
+        } else if isScanning && appState.finderItems.isEmpty {
+            VStack(spacing: 12) {
+                SwiftUI.ProgressView(value: appState.libraryScanProgress)
+                    .frame(maxWidth: 220)
+                    .accessibilityLabel("Scanning your library")
+                Text("Scanning your library… \(Int(appState.libraryScanProgress * 100))%")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if appState.finderItems.isEmpty {
@@ -138,19 +163,5 @@ struct SpaceFinderView: View {
             .padding(.vertical, 4)
             .background(Color.secondary.opacity(0.15))
             .cornerRadius(8)
-    }
-
-    private func load() async {
-        isLoading = true
-        defer { isLoading = false }
-        guard appState.library.accessState != .denied else {
-            appState.finderItems = []
-            appState.finderEstimateBytes = 0
-            return
-        }
-        let items = await appState.library.fetchLargestAssets(limit: 40)
-        appState.finderItems = items
-        let topBytes = items.prefix(40).reduce(Int64(0)) { $0 + $1.originalBytes }
-        appState.finderEstimateBytes = Int64(Double(topBytes) * Config.Estimate.smartRatio)
     }
 }

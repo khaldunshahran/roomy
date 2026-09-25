@@ -63,6 +63,11 @@ struct AccessView: View {
         isRequesting = true
         defer { isRequesting = false }
         let state = await appState.library.requestAccess()
+        // Kick off the library scan right away so the finder has results
+        // (or real progress) the moment it appears.
+        if state == .full || state == .limited {
+            appState.startLibraryScanIfNeeded()
+        }
         switch state {
         case .full:
             appState.route = .finder

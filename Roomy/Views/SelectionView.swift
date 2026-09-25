@@ -9,6 +9,15 @@ struct SelectionView: View {
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
+    /// Fixed cell size (3 columns). Avoids a GeometryReader per cell, which
+    /// forces extra layout passes and made the grid feel sluggish.
+    private var cellSize: CGFloat {
+        let screenWidth = UIScreen.main.bounds.width
+        let sidePadding: CGFloat = 16 * 2 // the VStack's .padding()
+        let spacing: CGFloat = 8 * 2      // between the 3 columns
+        return (screenWidth - sidePadding - spacing) / 3
+    }
+
     private var selectedItems: [LibraryItem] {
         appState.finderItems.filter { selectedIDs.contains($0.id) }
     }
@@ -37,10 +46,8 @@ struct SelectionView: View {
 
                     LazyVGrid(columns: columns, spacing: 8) {
                         ForEach(appState.finderItems) { item in
-                            GeometryReader { geo in
-                                cell(for: item, width: geo.size.width)
-                            }
-                            .aspectRatio(1, contentMode: .fit)
+                            cell(for: item, width: cellSize)
+                                .frame(width: cellSize, height: cellSize)
                         }
                     }
                 }

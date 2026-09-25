@@ -1,4 +1,5 @@
 import SwiftUI
+import Photos
 
 /// Shows measured savings, per-item results, and the original-review step.
 struct ResultView: View {
@@ -97,25 +98,9 @@ struct ResultView: View {
                 if !reviewItems.isEmpty {
                     section(title: "Review originals") {
                         ForEach(reviewItems) { item in
-                            HStack(spacing: 12) {
-                                AssetThumbnailView(asset: item.libraryItem.asset, size: CGSize(width: 48, height: 48))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.libraryItem.isVideo ? "Video" : "Photo")
-                                        .font(.headline)
-                                    if item.originalDeleted {
-                                        Text("Moved ✓")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.green)
-                                    } else {
-                                        Button("Move original to Recently Deleted") {
-                                            pendingDelete = item
-                                            showDeleteAlert = true
-                                        }
-                                        .font(.subheadline)
-                                        .accessibilityLabel("Move original to Recently Deleted")
-                                    }
-                                }
-                                Spacer()
+                            ReviewRow(item: item) { tapped in
+                                pendingDelete = tapped
+                                showDeleteAlert = true
                             }
                         }
                     }
@@ -173,5 +158,52 @@ struct ResultView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One review row: preview the compressed copy, see the saving, then decide
+/// what happens to the original. Deletion always goes to iOS Recently
+/// Deleted (recoverable) and is only offered after a verified save.
+private struct ReviewRow: View {
+    let item: BatchItem
+    let onDeleteTap: (BatchItem) -> Void
+
+    @State private var compressedAsset: PHAsset?
+    @State private var showPreview = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AssetThumbnailView(asset: compressedAsset ?? item.libraryItem.asset, size: CGSize(width: 48, height: 48))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.libraryItem.isVideo ? "Video" : "Photo")
+                    .font(.headline)
+                Text("Saved \(FormatHelpers.bytes(item.bytesSaved))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if item.originalDeleted {
+                    Text("Original moved ✓")
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                } else {
+                    HStack(spacing: 16) {
+                        Button("Preview copy") { showPreview = true }
+                            .font(.subheadline)
+                            .accessibilityLabel("Preview compressed copy")
+                        Button("Move original to Recently Deleted") { onDeleteTap(item) }
+                            .font(.subheadline)
+                            .accessibilityLabel("Move original to Recently Deleted")
+                    }
+                }
+            }
+            Spacer()
+        }
+        .task {
+            if compressedAsset == nil, let id = item.verifiedCopyLocalIdentifier {
+                compressedAsset = PhotoLibraryService.fetchAsset(localIdentifier: id)
+            }
+        }
+        .sheet(isPresented: $showPreview) {
+            CompressedPreviewSheet(item: item)
+        }
     }
 }
