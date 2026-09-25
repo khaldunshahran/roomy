@@ -26,29 +26,22 @@ struct ResultView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    Text("You freed \(FormatHelpers.bytes(appState.lastResultBytesSaved))")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                        .multilineTextAlignment(.center)
-                    Text("\(appState.lastResultItemCount) items compressed")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 24)
+            VStack(spacing: 20) {
+                heroCard
 
                 if !doneItems.isEmpty {
                     section(title: "Compressed") {
                         ForEach(doneItems) { item in
                             HStack(spacing: 12) {
-                                AssetThumbnailView(asset: item.libraryItem.asset, size: CGSize(width: 48, height: 48))
+                                AssetThumbnailView(asset: item.libraryItem.asset, size: CGSize(width: 52, height: 52))
+                                    .cornerRadius(10)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.libraryItem.isVideo ? "Video" : "Photo")
                                         .font(.headline)
                                     Text("Saved \(FormatHelpers.bytes(item.bytesSaved))")
                                         .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.green)
                                     if case .done(_, let note) = item.state, let note {
                                         Text(note)
                                             .font(.caption)
@@ -56,7 +49,11 @@ struct ResultView: View {
                                     }
                                 }
                                 Spacer()
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .accessibilityHidden(true)
                             }
+                            .roomyCard(padding: 12)
                         }
                     }
                 }
@@ -65,9 +62,14 @@ struct ResultView: View {
                     section(title: "Couldn't compress") {
                         ForEach(failedItems) { item in
                             HStack(spacing: 12) {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .foregroundStyle(.red)
-                                    .accessibilityHidden(true)
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color.red.opacity(0.12))
+                                        .frame(width: 52, height: 52)
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.red)
+                                        .accessibilityHidden(true)
+                                }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.libraryItem.isVideo ? "Video" : "Photo")
                                         .font(.headline)
@@ -84,6 +86,7 @@ struct ResultView: View {
                                 .buttonStyle(.bordered)
                                 .accessibilityLabel("Retry item")
                             }
+                            .roomyCard(padding: 12)
                         }
                     }
                 }
@@ -92,11 +95,14 @@ struct ResultView: View {
                     Label(deleteError, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
                         .foregroundStyle(.red)
-                        .multilineTextAlignment(.leading)
+                        .roomyCard(padding: 12)
                 }
 
                 if !reviewItems.isEmpty {
                     section(title: "Review originals") {
+                        Text("Preview each compressed copy, then decide what happens to the original. Originals only ever move to Recently Deleted — nothing is permanently erased.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         ForEach(reviewItems) { item in
                             ReviewRow(item: item) { tapped in
                                 pendingDelete = tapped
@@ -106,7 +112,7 @@ struct ResultView: View {
                     }
                 }
 
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     Button {
                         if appState.lastBatchWasFirstWin && !appState.store.isUnlocked {
                             appState.route = .paywall
@@ -114,13 +120,8 @@ struct ResultView: View {
                             appState.route = .main
                         }
                     } label: {
-                        Text("Continue")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.accentColor)
-                            .foregroundStyle(.white)
-                            .cornerRadius(14)
+                        Text("Done")
+                            .roomyPrimaryButton()
                     }
                     .accessibilityLabel("Continue")
 
@@ -130,6 +131,7 @@ struct ResultView: View {
                     .buttonStyle(.bordered)
                     .accessibilityLabel("Compress more")
                 }
+                .padding(.top, 4)
             }
             .padding()
         }
@@ -149,11 +151,41 @@ struct ResultView: View {
         .onReceive(appState.batch.objectWillChange) { _ in refreshSeed = UUID() }
     }
 
+    private var heroCard: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "party.popper.fill")
+                .font(.title)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            Text("You freed")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(FormatHelpers.bytes(appState.lastResultBytesSaved))
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.accentColor)
+            Text("\(appState.lastResultItemCount) items compressed")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(
+            LinearGradient(
+                colors: [Color.accentColor.opacity(0.14), Color.accentColor.opacity(0.03)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .cornerRadius(RoomyStyle.corner)
+        .padding(.top, 8)
+    }
+
     private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.headline)
-            VStack(spacing: 12) {
+                .font(.title3)
+                .fontWeight(.bold)
+            VStack(spacing: 10) {
                 content()
             }
         }
@@ -172,31 +204,58 @@ private struct ReviewRow: View {
     @State private var showPreview = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            AssetThumbnailView(asset: compressedAsset ?? item.libraryItem.asset, size: CGSize(width: 48, height: 48))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.libraryItem.isVideo ? "Video" : "Photo")
-                    .font(.headline)
-                Text("Saved \(FormatHelpers.bytes(item.bytesSaved))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                if item.originalDeleted {
-                    Text("Original moved ✓")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                AssetThumbnailView(asset: compressedAsset ?? item.libraryItem.asset, size: CGSize(width: 52, height: 52))
+                    .cornerRadius(10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.libraryItem.isVideo ? "Video" : "Photo")
+                        .font(.headline)
+                    Text("Saved \(FormatHelpers.bytes(item.bytesSaved))")
                         .font(.subheadline)
+                        .fontWeight(.semibold)
                         .foregroundStyle(.green)
-                } else {
-                    HStack(spacing: 16) {
-                        Button("Preview copy") { showPreview = true }
-                            .font(.subheadline)
-                            .accessibilityLabel("Preview compressed copy")
-                        Button("Move original to Recently Deleted") { onDeleteTap(item) }
-                            .font(.subheadline)
-                            .accessibilityLabel("Move original to Recently Deleted")
-                    }
+                }
+                Spacer()
+                if item.originalDeleted {
+                    Label("Moved", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.green)
                 }
             }
-            Spacer()
+            if !item.originalDeleted {
+                HStack(spacing: 10) {
+                    Button {
+                        showPreview = true
+                    } label: {
+                        Label("Preview copy", systemImage: "eye.fill")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.accentColor.opacity(0.12))
+                            .foregroundStyle(Color.accentColor)
+                            .cornerRadius(10)
+                    }
+                    .accessibilityLabel("Preview compressed copy")
+                    Button {
+                        onDeleteTap(item)
+                    } label: {
+                        Label("Delete original", systemImage: "trash")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.red.opacity(0.1))
+                            .foregroundStyle(.red)
+                            .cornerRadius(10)
+                    }
+                    .accessibilityLabel("Move original to Recently Deleted")
+                }
+            }
         }
+        .roomyCard()
         .task {
             if compressedAsset == nil, let id = item.verifiedCopyLocalIdentifier {
                 compressedAsset = PhotoLibraryService.fetchAsset(localIdentifier: id)

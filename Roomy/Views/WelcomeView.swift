@@ -5,25 +5,28 @@ struct WelcomeView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: 8) {
-                Text("Roomy")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                Text("Free the storage. Keep the memories.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            RoomyAppMark(size: 96)
+                .padding(.bottom, 20)
 
-            VStack(alignment: .leading, spacing: 16) {
-                PromiseRow(icon: "iphone", text: "On-device — your media never leaves your phone")
-                PromiseRow(icon: "nosign", text: "No ads")
+            Text("Roomy")
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+            Text("Free the storage.\nKeep the memories.")
+                .font(.title3)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 6)
+                .padding(.bottom, 28)
+
+            VStack(spacing: 10) {
+                PromiseRow(icon: "cpu", text: "100% on-device — your media never leaves your phone")
+                PromiseRow(icon: "nosign", text: "No ads, no subscriptions, no nonsense")
                 PromiseRow(icon: "key.fill", text: "Pay once — one purchase unlocks everything")
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
 
             Spacer()
 
@@ -31,16 +34,16 @@ struct WelcomeView: View {
                 appState.route = .access
             } label: {
                 Text("Choose Photos & Videos")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.accentColor)
-                    .foregroundStyle(.white)
-                    .cornerRadius(14)
+                    .roomyPrimaryButton()
             }
             .accessibilityLabel("Choose Photos & Videos")
-            .padding(.horizontal)
-            .padding(.bottom, 32)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+
+            Text("iOS 17+ · Works with limited photo access")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 28)
         }
     }
 }
@@ -50,13 +53,19 @@ private struct PromiseRow: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(.tint)
-                .frame(width: 28)
-                .accessibilityHidden(true)
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 38, height: 38)
+                Image(systemName: icon)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+            }
             Text(text)
-                .font(.body)
+                .font(.subheadline)
+            Spacer()
         }
+        .roomyCard(padding: 12)
     }
 }

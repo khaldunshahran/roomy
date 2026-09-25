@@ -167,6 +167,19 @@ final class VideoCompressor {
         preset: QualityPreset,
         progress: @escaping (Double) -> Void
     ) async throws -> URL {
+        // A previous cancel() must never poison later compressions:
+        // reset the flag and drop stale reader/writer references up front.
+        lock.lock()
+        _cancelled = false
+        reader = nil
+        writer = nil
+        lock.unlock()
+        defer {
+            lock.lock()
+            reader = nil
+            writer = nil
+            lock.unlock()
+        }
         // Try HEVC first; on any non-cancellation failure, retry once with H.264.
         do {
             return try await runCompression(
@@ -329,6 +342,16 @@ final class VideoCompressor {
         writer.startSession(atSourceTime: .zero)
 
         // Pump samples from reader to writer.
+        // Progress is throttled to ~2% steps: reporting every frame would
+        // spawn thousands of main-thread UI updates per minute of video,
+        // which made the whole phone feel slow.
+        var lastReportedProgress = -1.0
+        let reportProgress: (Double) -> Void = { p in
+            if p >= 1.0 || p - lastReportedProgress >= 0.02 {
+                lastReportedProgress = p
+                progress(p)
+            }
+        }
         var videoDone = false
         var audioDone = audioInput == nil
         while !videoDone || !audioDone {
@@ -343,7 +366,7 @@ final class VideoCompressor {
                     videoInput.append(sample)
                     let t = CMSampleBufferGetPresentationTimeStamp(sample)
                     if durationSeconds > 0 {
-                        progress(min(0.99, CMTimeGetSeconds(t) / durationSeconds))
+                        reportProgress(min(0.99, CMTimeGetSeconds(t) / durationSeconds))
                     }
                 } else {
                     videoDone = true
@@ -374,7 +397,7 @@ final class VideoCompressor {
             throw RoomyError.exportFailed("Video export failed.")
         }
 
-        progress(1.0)
+        reportProgress(1.0)
         didComplete = true
         return outputURL
     }

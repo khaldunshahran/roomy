@@ -41,9 +41,12 @@ struct PreviewView: View {
                         .padding()
                 } else if let before = beforeImage, let after = afterImage {
                     CompareSlider(before: before, after: after)
+                        .roomyCard()
                     stats
+                        .roomyCard()
                 } else if let video = representativeVideo {
                     videoNote(for: video)
+                        .roomyCard()
                 }
 
                 if hasHDR {
@@ -62,12 +65,7 @@ struct PreviewView: View {
                     appState.route = .progress
                 } label: {
                     Text("Compress \(appState.selectedItems.count) Items")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(appState.selectedItems.isEmpty ? Color.gray : Color.accentColor)
-                        .foregroundStyle(.white)
-                        .cornerRadius(14)
+                        .roomyPrimaryButton(isEnabled: !appState.selectedItems.isEmpty)
                 }
                 .disabled(appState.selectedItems.isEmpty)
                 .accessibilityLabel("Compress \(appState.selectedItems.count) items")

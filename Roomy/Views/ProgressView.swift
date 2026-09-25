@@ -20,12 +20,34 @@ struct BatchProgressView: View {
         }
     }
 
+    private var overallProgress: Double {
+        let items = appState.batch.items
+        guard !items.isEmpty else { return 0 }
+        let total = items.reduce(0.0) { $0 + progressValue(of: $1.state) }
+        return total / Double(items.count)
+    }
+
+    private func progressValue(of state: BatchItemState) -> Double {
+        switch state {
+        case .pending: return 0
+        case .downloadingFromICloud(let p): return p * 0.2
+        case .encoding(let p): return 0.2 + p * 0.6
+        case .verifying: return 0.85
+        case .saving: return 0.95
+        case .done: return 1
+        case .failed: return 1
+        case .cancelled: return 1
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 4) {
+            VStack(spacing: 10) {
                 Text(appState.batch.isRunning ? "Compressing…" : "Finished")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                SwiftUI.ProgressView(value: overallProgress)
+                    .tint(Color.accentColor)
+                    .accessibilityLabel("Overall progress")
                 Text("\(appState.batch.doneCount) done · \(appState.batch.failedCount) failed · \(appState.batch.items.count) total")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -34,10 +56,14 @@ struct BatchProgressView: View {
 
             Divider()
 
-            List(appState.batch.items) { item in
-                BatchItemRow(item: item)
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(appState.batch.items) { item in
+                        BatchItemRow(item: item)
+                    }
+                }
+                .padding()
             }
-            .listStyle(.plain)
 
             VStack(spacing: 12) {
                 if appState.batch.isRunning {
@@ -50,7 +76,7 @@ struct BatchProgressView: View {
                             .padding()
                             .background(Color.red.opacity(0.12))
                             .foregroundStyle(.red)
-                            .cornerRadius(14)
+                            .cornerRadius(RoomyStyle.corner)
                     }
                     .accessibilityLabel("Cancel compression")
                     .accessibilityHint("Keeps everything already compressed.")
@@ -62,12 +88,7 @@ struct BatchProgressView: View {
                         appState.route = .result
                     } label: {
                         Text("Continue")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.accentColor)
-                            .foregroundStyle(.white)
-                            .cornerRadius(14)
+                            .roomyPrimaryButton()
                     }
                     .accessibilityLabel("Continue to results")
                 }
@@ -86,16 +107,41 @@ private struct BatchItemRow: View {
     var body: some View {
         HStack(spacing: 12) {
             AssetThumbnailView(asset: item.libraryItem.asset, size: CGSize(width: 56, height: 56))
+                .cornerRadius(10)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.libraryItem.isVideo ? "Video" : "Photo")
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(item.libraryItem.isVideo ? "Video" : "Photo")
+                        .font(.headline)
+                    Spacer()
+                    statusPill
+                }
                 stateView
             }
-
-            Spacer()
         }
-        .padding(.vertical, 4)
+        .roomyCard(padding: 12)
+    }
+
+    @ViewBuilder
+    private var statusPill: some View {
+        switch item.state {
+        case .done:
+            Label("Done", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.green)
+        case .failed:
+            Label("Failed", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.red)
+        case .cancelled:
+            Text("Cancelled")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        default:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
@@ -108,16 +154,18 @@ private struct BatchItemRow: View {
         case .downloadingFromICloud(let progress):
             VStack(alignment: .leading, spacing: 4) {
                 SwiftUI.ProgressView(value: progress)
+                    .tint(Color.accentColor)
                     .accessibilityLabel("Downloading from iCloud")
-                Text("Downloading from iCloud…")
+                Text("Downloading from iCloud… \(Int(progress * 100))%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         case .encoding(let progress):
             VStack(alignment: .leading, spacing: 4) {
                 SwiftUI.ProgressView(value: progress)
+                    .tint(Color.accentColor)
                     .accessibilityLabel("Compressing")
-                Text("Compressing…")
+                Text("Compressing… \(Int(progress * 100))%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -132,15 +180,16 @@ private struct BatchItemRow: View {
         case .saving:
             HStack(spacing: 8) {
                 SwiftUI.ProgressView()
-                    .accessibilityLabel("Saving")
+                    .accessibilityLabel("Saving…")
                 Text("Saving…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         case .done(let bytesSaved, let note):
             VStack(alignment: .leading, spacing: 2) {
-                Label("Saved \(FormatHelpers.bytes(bytesSaved))", systemImage: "checkmark.circle.fill")
+                Text("Saved \(FormatHelpers.bytes(bytesSaved))")
                     .font(.subheadline)
+                    .fontWeight(.semibold)
                     .foregroundStyle(.green)
                 if let note {
                     Text(note)
@@ -149,8 +198,8 @@ private struct BatchItemRow: View {
                 }
             }
         case .failed(let reason):
-            VStack(alignment: .leading, spacing: 4) {
-                Label(reason, systemImage: "exclamationmark.triangle")
+            VStack(alignment: .leading, spacing: 6) {
+                Text(reason)
                     .font(.subheadline)
                     .foregroundStyle(.red)
                 Button("Retry") {

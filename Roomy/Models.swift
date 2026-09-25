@@ -29,6 +29,15 @@ enum QualityPreset: String, CaseIterable, Identifiable {
             return "Gentle squeeze, keeps everything looking its best. Smaller savings."
         }
     }
+
+    /// One-word summary for the compact preset picker.
+    var shortTagline: String {
+        switch self {
+        case .smart: return "Balanced"
+        case .smaller: return "Max savings"
+        case .best: return "Top quality"
+        }
+    }
 }
 
 // MARK: - Photo library access
