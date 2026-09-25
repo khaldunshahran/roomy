@@ -1,0 +1,61 @@
+# Roomy — unsigned device IPA for sideloading (Sideloadly / AltStore).
+#
+# Builds the app for physical iPhones (iphoneos SDK) with code signing
+# disabled, packages the .app as an unsigned .ipa, and uploads it as an
+# artifact. Sideloadly signs it on your own machine with your Apple ID
+# (free Apple IDs work; the install lasts 7 days, then you re-sideload).
+#
+# This workflow needs NO Apple Developer account and NO secrets.
+
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: Roomy
+  SCHEME: Roomy
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for device (unsigned)
+        run: |
+          xcodebuild build \
+            -project "$PROJECT_NAME.xcodeproj" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="build/Build/Products/Debug-iphoneos/$PROJECT_NAME.app"
+          test -d "$APP_PATH"
+          rm -rf Payload Roomy-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r -y Roomy-unsigned.ipa Payload -x "*.DS_Store"
+          unzip -l Roomy-unsigned.ipa | head -8
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roomy-unsigned-ipa
+          path: Roomy-unsigned.ipa
+          if-no-files-found: error
