@@ -356,13 +356,19 @@ final class VideoCompressor {
         var audioDone = audioInput == nil
         while !videoDone || !audioDone {
             if isCancelled { throw CancellationError() }
+            // Fail fast if the reader or writer died mid-stream (e.g. the
+            // disk filled up). Without this, the ready-wait loops below
+            // would sleep forever and the UI would sit at 2% indefinitely.
+            if reader.status == .failed || reader.status == .cancelled {
+                throw RoomyError.exportFailed(reader.error?.localizedDescription ?? "Could not read the video.")
+            }
+            if writer.status == .failed || writer.status == .cancelled {
+                throw RoomyError.exportFailed(writer.error?.localizedDescription ?? "Could not write the video.")
+            }
 
             if !videoDone {
                 if let sample = videoOutput.copyNextSampleBuffer() {
-                    while !videoInput.isReadyForMoreMediaData {
-                        try? await Task.sleep(nanoseconds: 500_000)
-                        if isCancelled { throw CancellationError() }
-                    }
+                    try await waitUntilReady(videoInput, writer: writer)
                     videoInput.append(sample)
                     let t = CMSampleBufferGetPresentationTimeStamp(sample)
                     if durationSeconds > 0 {
@@ -376,10 +382,7 @@ final class VideoCompressor {
 
             if !audioDone, let audioOutput, let audioInput {
                 if let sample = audioOutput.copyNextSampleBuffer() {
-                    while !audioInput.isReadyForMoreMediaData {
-                        try? await Task.sleep(nanoseconds: 500_000)
-                        if isCancelled { throw CancellationError() }
-                    }
+                    try await waitUntilReady(audioInput, writer: writer)
                     audioInput.append(sample)
                 } else {
                     audioDone = true
@@ -405,6 +408,30 @@ final class VideoCompressor {
     /// Round down to an even integer (H.264/HEVC require even dimensions).
     private nonisolated func evenDown(_ x: Double) -> Int {
         Int((x / 2).rounded(.down)) * 2
+    }
+
+    /// Waits until a writer input can take more data. Throws instead of
+    /// sleeping forever when the writer fails (disk full is the classic
+    /// cause) or when the encoder stalls with no progress.
+    private nonisolated func waitUntilReady(
+        _ input: AVAssetWriterInput,
+        writer: AVAssetWriter
+    ) async throws {
+        let deadline = Date().addingTimeInterval(60)
+        while !input.isReadyForMoreMediaData {
+            if isCancelled { throw CancellationError() }
+            if writer.status == .failed || writer.status == .cancelled {
+                throw RoomyError.exportFailed(writer.error?.localizedDescription ?? "Could not write the video.")
+            }
+            if Date() > deadline {
+                throw RoomyError.exportFailed(
+                    "The encoder stalled. This usually means the iPhone is critically low on free space — " +
+                    "free a little space and try again."
+                )
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        if isCancelled { throw CancellationError() }
     }
 
     /// Verify a compressed video file.

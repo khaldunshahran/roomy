@@ -114,6 +114,10 @@ final class BatchEngine: ObservableObject {
         }
 
         setState(index, .encoding(progress: 0))
+        // Fail fast when the phone is too full to hold source + output.
+        // Without this, AVAssetWriter dies mid-encode on a full disk.
+        try ensureFreeSpace(for: Int64(data.count))
+
         let out = try await CompressionService.compressPhoto(data, preset: currentPreset)
         var final = out.data
         if !keepLocation {
@@ -151,6 +155,11 @@ final class BatchEngine: ObservableObject {
         }
 
         setState(index, .encoding(progress: 0))
+        // Fail fast when the phone is too full to hold source + output.
+        // Without this, AVAssetWriter dies mid-encode on a full disk and the
+        // item would hang instead of reporting a clear error.
+        try ensureFreeSpace(for: fileSize(of: url))
+
         // The progress closure may fire on a background thread; hop back to
         // the main actor before touching published state.
         let outURL = try await videoCompressor.compress(sourceURL: url, preset: currentPreset) { [weak self] p in
@@ -328,6 +337,26 @@ final class BatchEngine: ObservableObject {
             return false
         }
         return free > neededBytes * 3
+    }
+
+    /// Throws a clear, actionable error when the iPhone doesn't have enough
+    /// free space to compress an item of `sourceBytes`. Needs roughly 2x the
+    /// source (download copy + encoded output + headroom). When free space
+    /// can't be determined, lets the attempt proceed rather than blocking it.
+    private func ensureFreeSpace(for sourceBytes: Int64) throws {
+        guard let attrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+              let free = attrs[.systemFreeSize] as? Int64 else {
+            return
+        }
+        let needed = sourceBytes * 2
+        guard free > needed else {
+            throw RoomyError.exportFailed(
+                "Not enough free space on this iPhone to compress this item " +
+                "(about \(FormatHelpers.bytes(needed)) free needed). " +
+                "Free a little space first — or compress one item, move its original " +
+                "to Recently Deleted, and repeat."
+            )
+        }
     }
 
     static func completedIDs() -> Set<String> { BatchStore.completedIDs() }
