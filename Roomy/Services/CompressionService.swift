@@ -228,7 +228,7 @@ final class VideoCompressor {
         var audioChannels: Int = 2
         if let audioTrack,
            let formatDescs = try? await audioTrack.load(.formatDescriptions),
-           let formatDesc = formatDescs.first as? CMAudioFormatDescription,
+           let formatDesc = formatDescs.first,
            let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc) {
             if asbd.pointee.mSampleRate > 0 { audioSampleRate = asbd.pointee.mSampleRate }
             if asbd.pointee.mChannelsPerFrame > 0 { audioChannels = Int(asbd.pointee.mChannelsPerFrame) }
